@@ -14,42 +14,42 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import (SEQ_LENGTH,BATCH_SIZE,VOCAB_SIZE, DEVICE,GEN_NUM_EPOCH, 
-                    ONEHOT_SINGLE,MAXINT,openLog)
+from config import (SEQ_LENGTH,VOCAB_SIZE,DEVICE,GEN_NUM_EPOCH,MAXINT,openLog)
 from data_processing import read_sampleFile
 from lstmCore import pretrain_LSTMCore
 
 class Generator(nn.Module):
-    def __init__(self, pretrain_model=None, start_token=0, ignored_tokens=None):
-        super(Generator, self).__init__()
+    def __init__(self, pretrain_model=None, start_token=0, 
+                 ignored_tokens=None):
+        super().__init__()
         self.start_token = start_token
         self.ignored_tokens = ignored_tokens
         if pretrain_model is None:
-            x, _, reverse_vocab = read_sampleFile()
+            x, _, reverse_vocab, _ = read_sampleFile()
             self.pretrain_model, _ = pretrain_LSTMCore(x)
         else:
             self.pretrain_model = pretrain_model       
-        self.softmax = nn.Softmax(dim=1)
+        self.softmax = nn.Softmax(dim=2)
         self.loss = GeneratorLoss()
     
-    def forward(self, x, rewards, ignored_tokens=None):
-        ''' forward pass. variables can be backpropagated.
-        '''
+    def forward(self, x, rewards, ignored_tokens=None, sentence_lengths=None):
+        ''' forward pass. variables can be backpropagated. '''
         if ignored_tokens is None:
             ignored_tokens = self.ignored_tokens
-        y = self.pretrain_model(x).data
+        y = self.pretrain_model(x, sentence_lengths=None).data
         y_pred = self.pretrain_model.tag_space
         y_pred = self.ignoreTokens(y_pred, ignored_tokens)
         self.y_prob = self.softmax(y_pred)
-        self.y_output = self.y_prob.multinomial(num_samples=1)
+        shape = (self.y_prob.shape[0], self.y_prob.shape[1]) 
+        self.y_output = self.y_prob.view(-1,self.y_prob.shape[-1]).multinomial(num_samples=1).view(shape)
         
         if rewards is None:
-            rewards = self.y_prob.sum(dim=1).data
+            rewards = self.y_prob.sum(dim=2).data
             
-        self.loss_variable = self.loss(self.y_prob, x, rewards)     
+        self.loss_variable = self.loss(self.y_prob, x, rewards)
         return self.y_output
     
-    def generate(self, start_token=None, ignored_tokens=None):
+    def generate(self, start_token=None, ignored_tokens=None, batch_size=1):
         ''' the generate_LSTMCore only generates samples under torch.no_grad,
             therefore it will not be backpropagated.
         '''
@@ -57,22 +57,22 @@ class Generator(nn.Module):
             start_token = self.start_token
         if ignored_tokens is None:
             ignored_tokens = self.ignored_tokens
-        y_all_sample = self.generate_LSTMCore(start_token, ignored_tokens)
+        y_all_sample = self.generate_LSTMCore(start_token, ignored_tokens, batch_size)
         return y_all_sample
     
-    def generate_LSTMCore(self, start_token, ignored_tokens):
-        y = start_token
-        y_all_sample = [int(start_token)]
-        with torch.no_grad():            
-            self.pretrain_model.hidden = self.pretrain_model.init_hidden()
+    def generate_LSTMCore(self, start_token, ignored_tokens, batch_size=1):
+        y = [start_token] * batch_size
+        y_all_sample = torch.Tensor(y).int().view(-1,1)
+        with torch.no_grad():
+            self.pretrain_model.hidden = self.pretrain_model.init_hidden(len(y))
             for i in range(SEQ_LENGTH-1):        
-                x = torch.Tensor([y]).view([-1,1])
-                y_pred = self.pretrain_model(x)
+                x = torch.Tensor(y).view([-1,1])
+                y_pred = self.pretrain_model(x,sentence_lengths=[1])
                 # random choice based on probability distribution. another possibility would be to take the max.
-                y_prob = F.softmax(self.ignoreTokens(self.pretrain_model.tag_space, ignored_tokens), dim=1)
-                y_prob = y_prob.squeeze(dim=0)
-                y = y_prob.multinomial(num_samples=1)
-                y_all_sample.append(int(y.tolist()[0]))
+                y_prob = F.softmax(self.ignoreTokens(self.pretrain_model.tag_space, ignored_tokens), dim=2)
+                shape = (y_prob.shape[0], y_prob.shape[1]) 
+                y = y_prob.view(-1,y_prob.shape[-1]).multinomial(num_samples=1).float().view(shape)
+                y_all_sample = torch.cat([y_all_sample,y.int()],dim=1)
         return y_all_sample
     
     def ignoreTokens(self, original, ignored_tokens):
@@ -82,18 +82,16 @@ class Generator(nn.Module):
         '''
         if ignored_tokens is None:
             return original
-        A = torch.eye(n=original.shape[1])
         for token in ignored_tokens:
-            if A[token][token] < 0:
-                A[token][token] = MAXINT
+            if len(original.shape)==3:
+                original[:,:,token] = -MAXINT
             else:
-                A[token][token] = -MAXINT
-        return torch.mm(original, A)
-        
+                original[:,token] = -MAXINT
+        return original
 
 class GeneratorLoss(nn.Module):
     def __init__(self):
-        super(GeneratorLoss,self).__init__()
+        super().__init__()
 
     def forward(self, prediction, x, rewards):
         '''
@@ -113,52 +111,67 @@ class GeneratorLoss(nn.Module):
              sumproduct of the two 1-dimensional vectors. 
              g_loss reduces to one single value.
         '''
-        x1 = x.view([-1,1]).long()
-        ONEHOT_SINGLE.zero_()
-        x2 = ONEHOT_SINGLE.scatter_(1,x1,1)
+        x1 = x.view(-1,1).long()
+        pred1 = prediction.view(-1,VOCAB_SIZE)
+        x2 = self.createOneHotDummy(dim=(x1.shape[0],pred1.shape[1])).scatter_(1,x1,1)
 
-        pred1 = prediction.view([-1,VOCAB_SIZE])
-        # equivalent to tensorflow.clip_by_value
         pred2 = torch.log(torch.clamp(pred1, min=1e-20, max=1.0))
         prod = torch.mul(x2,pred2)
         reduced_prod = torch.sum(prod, dim=1)
-        rewards_prod = torch.mul(reduced_prod, rewards.view([-1]))
+        rewards_prod = torch.mul(reduced_prod, rewards.view(-1))
         generator_loss = torch.sum(rewards_prod)
         return generator_loss
+    
+    def createOneHotDummy(self, dim):
+        one_hot = torch.Tensor(dim[0],dim[1], device=DEVICE)
+        return one_hot.zero_()
 
-def train_generator(model, x, reward, iter_n_gen=None):
+def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_lengths=None):
+    if len(x.shape) == 1:
+        x = x.view(1,x.shape[0])
+    if sentence_lengths is None:
+        sentence_lengths = [x.shape[1]] * len(x)
+    if len(sentence_lengths) < len(x):
+        sentence_lengths.extend([x.shape[1]] 
+                                * (len(x)-len(sentence_lengths)))
     if reward is None:
-        reward = [None] * len(x)
+        reward = torch.Tensor([1.0] * x.shape[0] * x.shape[1]).view(x.shape)
     if iter_n_gen is None:
         iter_n_gen = GEN_NUM_EPOCH
+        
     params = list(filter(lambda p: p.requires_grad, model.parameters()))
     optimizer = torch.optim.SGD(params, lr=0.01)
     log = openLog()
     log.write('\n\ntraining generator: {}\n'.format(datetime.now()))
     for epoch in range(iter_n_gen):
+        pointer = 0
         y_prob_all = []
         y_output_all = []
         epoch_loss = []
-        for i,(x0,r0) in enumerate(zip(x,reward)):
-            y_output = model(x0, r0)
+        while pointer + batch_size <= len(x):
+            x_batch = x[pointer:pointer+batch_size]
+            r_batch = reward[pointer:pointer+batch_size]
+            s_length = sentence_lengths[pointer:pointer+batch_size]
+            model.pretrain_model.hidden = model.pretrain_model.init_hidden(batch_size)
+            y_output = model(x_batch, r_batch, s_length)
             y_prob = model.y_prob
             loss_var = model.loss_variable
             optimizer.zero_grad()
             loss_var.backward()
             optimizer.step()
-            model.pretrain_model.hidden = model.pretrain_model.init_hidden()
             y_prob_all.append(y_prob)
             y_output_all.append(y_output)  
             epoch_loss.append(loss_var.item())
+            pointer = pointer + batch_size
         log.write('epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
     log.close()
     return ( model, torch.cat(y_prob_all), torch.cat(y_output_all).view(list(x.shape)) )
 
 
-def sanityCheck_GeneratorLoss(pretrain_result=None):
+def sanityCheck_GeneratorLoss(pretrain_result=None, batch_size=5):
     '''test custom loss function '''
     if pretrain_result is None:
-        x, _, reverse_vocab = read_sampleFile()
+        x, _, reverse_vocab, _ = read_sampleFile()
         pretrain_result = pretrain_LSTMCore(x)
     model = pretrain_result[0]
     y_pred_pretrain = pretrain_result[1].view([-1,SEQ_LENGTH,VOCAB_SIZE])
@@ -170,8 +183,8 @@ def sanityCheck_GeneratorLoss(pretrain_result=None):
     log = openLog('test.txt')
     log.write('\n\nTest generator.sanityCheck_GeneratorLoss: {}\n'.format(datetime.now())) 
     criterion = GeneratorLoss()
-    g_loss = criterion(y_pred_pretrain[0:BATCH_SIZE,:,:], 
-                      x[0:BATCH_SIZE,:], test_reward[0:BATCH_SIZE,:])  
+    g_loss = criterion(y_pred_pretrain[0:batch_size,:,:], 
+                      x[0:batch_size,:], test_reward[0:batch_size,:])  
     g_loss.backward()
     optimizer.step()
     log.write('  generator.sanityCheck_GeneratorLoss SUCCESSFUL: '+str(g_loss)+'\n')
@@ -182,7 +195,7 @@ def sanityCheck_generator(model=None):
     ''' test Generator instantiation and train_generator function '''
     log = openLog('test.txt')
     log.write('\n\nTest generator.sanityCheck_generator: {}\n'.format(datetime.now()))     
-    x, vocabulary, reverse_vocab = read_sampleFile()
+    x, vocabulary, reverse_vocab, _ = read_sampleFile()
     if model is None:
         pretrain_result = pretrain_LSTMCore(x)
         model = Generator(pretrain_model=pretrain_result[0])

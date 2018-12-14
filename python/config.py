@@ -17,8 +17,8 @@ from datetime import datetime
 PATH = '../data/'
 MAXINT = 10000
 SEQ_LENGTH = 8 # x: 'START' + tokens; y: tokens + 'END'
+VOCAB_SIZE = 475 # num_tokens + ['START', 'PAD', 'END']
 EMB_SIZE = 32
-BATCH_SIZE = 5
 GENERATE_NUM = 100
 FILTER_SIZE = [  1,  2,  3,  4,  5,  6,  7,  8]
 NUM_FILTER =  [100,200,200,200,160,160,160,100]
@@ -26,7 +26,6 @@ DIS_NUM_EPOCH = 5
 DIS_NUM_EPOCH_PRETRAIN = 5
 GEN_NUM_EPOCH = 5
 GEN_NUM_EPOCH_PRETRAIN = 5
-VOCAB_SIZE = 475 # num_tokens + 2
 GEN_HIDDEN_DIM = 48
 ROLLOUT_ITER = 16
 TOTAL_BATCH = 3
@@ -52,10 +51,3 @@ if DEVICE.type == 'cuda':
     log.write('\nAllocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
     log.write('\nCached:   ', round(torch.cuda.memory_cached(0)/1024**3,1), 'GB')
     log.close()
-    
-def createOneHotDummy(dim=(BATCH_SIZE * SEQ_LENGTH, VOCAB_SIZE)):
-    one_hot = torch.Tensor(dim[0],dim[1], device=DEVICE)
-    return one_hot
-
-ONEHOT_BATCH = createOneHotDummy(dim=(BATCH_SIZE * SEQ_LENGTH, VOCAB_SIZE))
-ONEHOT_SINGLE = createOneHotDummy(dim=(SEQ_LENGTH, VOCAB_SIZE))

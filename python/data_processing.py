@@ -32,20 +32,42 @@ def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
 def read_sampleFile(file='real_data_chinesePoems.txt'):
     lineList_all = list()
     characters = list()
+    x_lengths = list()
     with open(PATH+file, 'r') as f:
         for line in f:
             line.strip()
             lineList = list(line)
-            lineList_all.append(['START']+lineList)
+            try: 
+                lineList.remove('\n')
+            except ValueError:
+                pass
+            x_lengths.append(len(lineList) + 1)
             characters.extend(lineList)
+            if len(lineList)<SEQ_LENGTH:
+                lineList.extend(['PAD'] * (SEQ_LENGTH - len(lineList)))
+            lineList_all.append(['START']+lineList)
     vocabulary = dict([(y,x+1) for x, y in enumerate(set(characters))])
     reverse_vocab = dict([(x+1,y) for x, y in enumerate(set(characters))])
     # add start and end tag:
     vocabulary['START'] = 0
     reverse_vocab[0] = 'START'
+    vocabulary['PAD'] = len(vocabulary)
+    reverse_vocab[len(vocabulary)-1] = 'PAD'
     vocabulary['END'] = len(vocabulary)
     reverse_vocab[len(vocabulary)-1] = 'END'
-    
+
+    tmp = sorted(zip(x_lengths,lineList_all), reverse=True)
+    x_lengths = [x for x,y in tmp]
+    lineList_all = [y for x,y in tmp]
     generated_data = [int(vocabulary[x]) for y in lineList_all for i,x in enumerate(y) if i<SEQ_LENGTH]
     x = torch.Tensor(generated_data).view(-1,SEQ_LENGTH)
-    return x.int(), vocabulary, reverse_vocab
+    return x.int(), vocabulary, reverse_vocab, x_lengths
+
+def decode(token_tbl, reverse_vocab, log=None):
+    words_all = []
+    for n in token_tbl:
+        words = [reverse_vocab[int(l)] for l in n]
+        words_all.append(words[1:])
+        if log is not None:
+            log.write(''.join(words[1:])+'\n')
+    return words_all

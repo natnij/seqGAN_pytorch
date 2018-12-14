@@ -15,10 +15,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-from config import (SEQ_LENGTH,EMB_SIZE,VOCAB_SIZE,
-                    DEVICE,GEN_HIDDEN_DIM,GEN_NUM_EPOCH_PRETRAIN,openLog)
-from embedding import Embedding
-from data_processing import gen_record,read_sampleFile
+from config import (SEQ_LENGTH,EMB_SIZE,VOCAB_SIZE,DEVICE,
+                    GEN_HIDDEN_DIM,GEN_NUM_EPOCH_PRETRAIN,openLog)
+from data_processing import gen_record,read_sampleFile,decode
 
 def init_matrix(shape, stdDev=0.1):
     normalDistr = Normal(torch.tensor([0.0]), torch.tensor([stdDev]))
@@ -27,103 +26,131 @@ def init_matrix(shape, stdDev=0.1):
 
 class LSTMCore(nn.Module):
     def __init__(self):
-        super(LSTMCore, self).__init__()
-        self.embedding = Embedding(VOCAB_SIZE, EMB_SIZE)
-        self.lstm = nn.LSTM(EMB_SIZE, GEN_HIDDEN_DIM)
+        super().__init__()
+        self.embedding = nn.Embedding(VOCAB_SIZE, EMB_SIZE)
+        self.lstm = nn.LSTM(EMB_SIZE, GEN_HIDDEN_DIM, batch_first=True)
         self.hidden2tag = nn.Linear(GEN_HIDDEN_DIM, VOCAB_SIZE)
-        self.logSoftmax = nn.LogSoftmax(dim=1)
+        self.logSoftmax = nn.LogSoftmax(dim=2)
         self.hidden = self.init_hidden()
 
-    def init_hidden(self):
-        return (torch.randn(1, 1, GEN_HIDDEN_DIM), torch.randn(1, 1, GEN_HIDDEN_DIM))
+    def init_hidden(self, batch_size=1):
+        # dim: (num_layers, minibatch_size, hidden_dim)
+        return (torch.randn(1, batch_size, GEN_HIDDEN_DIM), 
+                torch.randn(1, batch_size, GEN_HIDDEN_DIM))
         
-    def forward(self, sentence):
-        embeds = self.embedding(sentence)
-        lstm_out, self.hidden = self.lstm(embeds.view(len(sentence), 1, -1), self.hidden)
-        self.tag_space = self.hidden2tag(lstm_out.view(len(sentence), -1))
+    def forward(self, sentence, sentence_lengths=None):
+        # sentence dim: (batch_size, maximum sentence length)
+        if len(sentence.shape) == 1:
+            sentence = sentence.view(1,sentence.shape[0])
+        if sentence_lengths is None:
+            sentence_lengths = [sentence.shape[1]] * len(sentence)
+        if len(sentence_lengths) < len(sentence):
+            sentence_lengths.extend([sentence.shape[1]] 
+                                    * (len(sentence)-len(sentence_lengths)))
+            
+        embeds = self.embedding(sentence.long())
+        embeds = torch.nn.utils.rnn.pack_padded_sequence(embeds, sentence_lengths, batch_first=True)
+        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True)
+        self.tag_space = self.hidden2tag(lstm_out)
         tag_scores = self.logSoftmax(self.tag_space)
         return tag_scores
 
-def pretrain_LSTMCore(train_x=None):
+def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_token=VOCAB_SIZE-1):
     if train_x is None:
         x = gen_record()
     else:
         x = train_x
+    if len(x.shape) == 1:
+        x = x.view(1,x.shape[0])
+    if sentence_lengths is None:
+        sentence_lengths = [x.shape[1]] * len(x)
+    if len(sentence_lengths) < len(x):
+        sentence_lengths.extend([x.shape[1]] * (len(x)-len(sentence_lengths)))
     
     model = LSTMCore()
     model.to(DEVICE)
-    params = list(filter(lambda p: p.requires_grad, model.parameters()))
+    params = list(filter(lambda p: p.requires_grad, model.parameters()))    
     criterion = nn.NLLLoss()
     optimizer = torch.optim.SGD(params, lr=0.01)
     y_pred_all = []
     log = openLog()
     log.write('\n\ntraining lstmCore: {}\n'.format(datetime.now()))
     for epoch in range(GEN_NUM_EPOCH_PRETRAIN):
+        pointer = 0
         y_pred_all = []
         epoch_loss = []
-        for i,x0 in enumerate(x):
-            y = torch.cat((x0[1:],torch.Tensor([VOCAB_SIZE-1]).int()),dim=0)
-            y_pred = model(x0)
-            loss = criterion(y_pred, y.long())
+        while pointer + batch_size <= len(x):
+            x_batch = x[pointer:pointer+batch_size]
+            x0_length = sentence_lengths[pointer:pointer+batch_size]
+            y = torch.cat((x_batch[:,1:],
+                           torch.Tensor([end_token]*x_batch.shape[0])
+                           .int().view(x_batch.shape[0],1)),dim=1)
+            model.hidden = model.init_hidden(batch_size)
+            y_pred = model(x_batch, x0_length)
+            loss = criterion(y_pred.view(-1,y_pred.shape[-1]), y.long().view(-1))
             optimizer.zero_grad()
             loss.backward(retain_graph=True)
             optimizer.step()
-            model.hidden = model.init_hidden()
-            y_prob = F.softmax(model.tag_space, dim=1)
+            y_prob = F.softmax(model.tag_space, dim=2)
             y_pred_all.append(y_prob)
             epoch_loss.append(loss.item())
+            pointer = pointer + batch_size
         log.write('epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
     log.close()
     return model, torch.cat(y_pred_all)
 
-def test_genMaxSample(model, start_token=0):
+def test_genMaxSample(model, start_token=0, batch_size=1):
     ''' test lstmCore's generation function '''
     log = openLog('test.txt')
-    log.write('\n\nTest lstmCore.test_genMaxSample: {}'.format(datetime.now()))    
-    y = start_token
-    y_all_max = [int(start_token)]
-    y_all_sample = [int(start_token)]
+    log.write('\n\nTest lstmCore.test_genMaxSample: {}'.format(datetime.now()))
     with torch.no_grad():
-        model.hidden = model.init_hidden()
+        y = [start_token] * batch_size
+        y_all_max = torch.Tensor(y).int().view(-1,1)
+        model.hidden = model.init_hidden(len(y))
         for i in range(SEQ_LENGTH-1):
-            x = torch.Tensor([y]).view([-1,1])
-            y_pred = model(x)
-            y_pred = y_pred.squeeze(dim=0)
-            y_pred = y_pred[0:-1]
-            # take the max. another possibility would be random choice based on probability distribution.
-            y = torch.argmax(y_pred,dim=0)
-            y_all_max.append(int(y))
+            x = torch.Tensor(y).view([-1,1])
+            y_pred = model(x,sentence_lengths=[1])
+            y_pred = y_pred[:,:,1:-1]
+            y_pred = y_pred.squeeze(dim=1)
+            # take the max
+            y = torch.argmax(y_pred,dim=1).float().view(-1,1)
+            y_all_max = torch.cat([y_all_max,y.int()],dim=1)
         
-        model.hidden = model.init_hidden()
+        y = [start_token] * batch_size
+        y_all_sample = torch.Tensor(y).int().view(-1,1)
+        model.hidden = model.init_hidden(len(y))
         for i in range(SEQ_LENGTH-1):        
-            x = torch.Tensor([y]).view([-1,1])
-            y_pred = model(x)
-            # random choice based on probability distribution. another possibility would be to take the max.
-            y_prob = F.softmax(model.tag_space, dim=1)
-            y_prob = y_prob.squeeze(dim=0)
-            y = y_prob.multinomial(num_samples=1)
-            y_all_sample.append(int(y.tolist()[0]))
-    log.write('\n  lstmCore.test_genMaxSample SUCCESSFUL. {}\n'.format(datetime.now()))
+            x = torch.Tensor(y).view([-1,1])
+            y_pred = model(x,sentence_lengths=[1])
+            # random choice based on probability distribution.
+            y_prob = F.softmax(model.tag_space, dim=2)
+            shape = (y_prob.shape[0],y_prob.shape[1])
+            y = y_prob.view(-1,y_prob.shape[-1]).multinomial(num_samples=1).float().view(shape)
+            y_all_sample = torch.cat([y_all_sample,y.int()],dim=1)
+    log.write('\n  lstmCore.test_genMaxSample SUCCESSFUL: {}\n'.format(datetime.now()))
+    log.write('    y_all_max: \n' + str(y_all_max)+'\n')
+    log.write('    y_all_sample: \n' + str(y_all_sample)+'\n')    
     log.close()
     return y_all_max, y_all_sample
 
-def sanityCheck_LSTMCore():
+def sanityCheck_LSTMCore(batch_size=1):
     ''' test prtrain_LSTMCore function '''
     log = openLog('test.txt')
     log.write('\n\nTest lstmCore.sanityCheck_LSTMCore: {}\n'.format(datetime.now())) 
-    x, _, reverse_vocab = read_sampleFile()
-    pretrain_result = pretrain_LSTMCore(x)
+    log.close()
+    x, _, reverse_vocab, _ = read_sampleFile()
+    pretrain_result = pretrain_LSTMCore(x,batch_size=batch_size)
     model = pretrain_result[0]
-    y_all_max, y_all_sample = test_genMaxSample(model)
-    gen_tokens_max = [reverse_vocab[w] for w in y_all_max]
-    gen_tokens_sample = [reverse_vocab[w] for w in y_all_sample]
-    log.write('  gen_tokens_max: ' + '_'.join(gen_tokens_max) + '\n')
-    log.write('  gen_tokens_sample: ' + '_'.join(gen_tokens_sample) + '\n')
+    y_all_max, y_all_sample = test_genMaxSample(model,start_token=0,batch_size=batch_size)
+    log = openLog('test.txt')
+    gen_tokens_max = decode(y_all_max, reverse_vocab, log)
+    gen_tokens_sample = decode(y_all_sample, reverse_vocab, log)
     log.close()
     return gen_tokens_max, gen_tokens_sample
 
 #%%
 if __name__ == '__main__':
-    gen_tokens_max, gen_tokens_sample = sanityCheck_LSTMCore()
+    gen_tokens_max, gen_tokens_sample = sanityCheck_LSTMCore(4)
     
 
