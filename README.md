@@ -18,7 +18,7 @@ Input text as shown in sample data.
 
 For training: input sequence x is 'START' + tokens, output sequence y is tokens + 'END'.
 
-To generate text: run sequence_gan.py. The generated text will be saved in genTxt.txt file.
+To generate text: run sequenceGAN.py. The generated text will be saved in genTxt.txt file.
 
 ### Params
 
