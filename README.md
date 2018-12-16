@@ -14,11 +14,13 @@ Many thanks to the original authors.
 
 ### Inputs and outputs
 
-Input text as shown in sample data. 
+Input text as shown in sample data. Supports variable lengths input and batch processing, however for word segmentation you'd need to make some changes to the data_processing.py.
 
 For training: input sequence x is 'START' + tokens, output sequence y is tokens + 'END'.
 
-To generate text: run sequenceGAN.py. The generated text will be saved in genTxt.txt file.
+To generate sequences: run sequenceGAN.py. The generated text will be saved in genTxt.txt file.
+
+To generate sequences in batches of e.g. 4: run sequenceGAN.py 4.
 
 ### Params
 
@@ -54,8 +56,3 @@ The discriminator module is a CNN with a series of parallel conv layers, acting 
 
 ![alt_text](/doc/discriminator.jpg)
 
-### Further improvements
-
-1. The code has NOT yet been tested on GPU.
-
-2. It does not accept flexible sequence length. 
