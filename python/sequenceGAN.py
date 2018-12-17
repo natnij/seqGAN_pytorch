@@ -41,6 +41,8 @@ def main(batch_size):
     if batch_size is None:
         batch_size = 1
     x, vocabulary, reverse_vocab, sentence_lengths = read_sampleFile()
+    if batch_size > len(x):
+        batch_size = len(x)
     start_token = vocabulary['START']
     end_token = vocabulary['END']
     ignored_tokens = [start_token, end_token]

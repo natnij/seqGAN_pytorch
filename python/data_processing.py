@@ -57,7 +57,7 @@ def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
                 x_lengths.append(len(lineList) + 1)
                 characters.extend(lineList)
                 if len(lineList)<SEQ_LENGTH:
-                    lineList.extend(['PAD'] * (SEQ_LENGTH - len(lineList)))
+                    lineList.extend([pad_token] * (SEQ_LENGTH - len(lineList)))
                 lineList_all.append(['START']+lineList)
 
     vocabulary = dict([(y,x+1) for x, y in enumerate(set(characters))])
@@ -65,9 +65,9 @@ def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
     # add start and end tag:
     vocabulary['START'] = 0
     reverse_vocab[0] = 'START'
-    if 'PAD' not in vocabulary.keys():
-        vocabulary['PAD'] = len(vocabulary)
-        reverse_vocab[len(vocabulary)-1] = 'PAD'
+    if pad_token not in vocabulary.keys():
+        vocabulary[pad_token] = len(vocabulary)
+        reverse_vocab[len(vocabulary)-1] = pad_token
     vocabulary['END'] = len(vocabulary)
     reverse_vocab[len(vocabulary)-1] = 'END'
 
