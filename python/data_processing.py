@@ -10,6 +10,9 @@ Translated from the original tensorflow repo:
     https://github.com/LantaoYu/SeqGAN, and adjusted for wider usability.
 Many thanks to the original authors.
 """
+import pandas as pd
+from itertools import chain
+from collections import Counter
 import torch
 from config import SEQ_LENGTH,VOCAB_SIZE,GENERATE_NUM,DEVICE,PATH
 
@@ -29,30 +32,42 @@ def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
         assert fixed_value < target_space
         return torch.randint(low=fixed_value, high=fixed_value+1, size=(num,), device=DEVICE).long()
 
-def read_sampleFile(file='real_data_chinesePoems.txt'):
-    lineList_all = list()
-    characters = list()
-    x_lengths = list()
-    with open(PATH+file, 'r') as f:
-        for line in f:
-            line.strip()
-            lineList = list(line)
-            try: 
-                lineList.remove('\n')
-            except ValueError:
-                pass
-            x_lengths.append(len(lineList) + 1)
-            characters.extend(lineList)
-            if len(lineList)<SEQ_LENGTH:
-                lineList.extend(['PAD'] * (SEQ_LENGTH - len(lineList)))
-            lineList_all.append(['START']+lineList)
+def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
+    if file[-3:]=='pkl' or file[-3:]=='csv':
+        if file[-3:] == 'pkl':
+            data = pd.read_pickle(PATH+file)
+        else:
+            data = pd.read_csv(PATH+file)
+        lineList_all = data.values.tolist()
+        characters = set(chain.from_iterable(lineList_all))
+        lineList_all = [['START'] + w for w in lineList_all]
+        x_lengths = [len(x) - Counter(x)[pad_token] for x in lineList_all]
+    else:
+        lineList_all = list()
+        characters = list()
+        x_lengths = list()
+        with open(PATH+file, 'r', encoding='utf-8-sig') as f:
+            for line in f:
+                line.strip()
+                lineList = list(line)
+                try:
+                    lineList.remove('\n')
+                except ValueError:
+                    pass
+                x_lengths.append(len(lineList) + 1)
+                characters.extend(lineList)
+                if len(lineList)<SEQ_LENGTH:
+                    lineList.extend(['PAD'] * (SEQ_LENGTH - len(lineList)))
+                lineList_all.append(['START']+lineList)
+
     vocabulary = dict([(y,x+1) for x, y in enumerate(set(characters))])
     reverse_vocab = dict([(x+1,y) for x, y in enumerate(set(characters))])
     # add start and end tag:
     vocabulary['START'] = 0
     reverse_vocab[0] = 'START'
-    vocabulary['PAD'] = len(vocabulary)
-    reverse_vocab[len(vocabulary)-1] = 'PAD'
+    if 'PAD' not in vocabulary.keys():
+        vocabulary['PAD'] = len(vocabulary)
+        reverse_vocab[len(vocabulary)-1] = 'PAD'
     vocabulary['END'] = len(vocabulary)
     reverse_vocab[len(vocabulary)-1] = 'END'
 
