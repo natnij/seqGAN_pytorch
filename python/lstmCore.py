@@ -51,7 +51,7 @@ class LSTMCore(nn.Module):
         embeds = self.embedding(sentence.long())
         embeds = torch.nn.utils.rnn.pack_padded_sequence(embeds, sentence_lengths, batch_first=True)
         lstm_out, self.hidden = self.lstm(embeds, self.hidden)
-        lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True)
+        lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True, total_length=SEQ_LENGTH)
         self.tag_space = self.hidden2tag(lstm_out)
         tag_scores = self.logSoftmax(self.tag_space)
         return tag_scores
