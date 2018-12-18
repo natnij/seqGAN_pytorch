@@ -16,19 +16,18 @@ from datetime import datetime
 
 PATH = '../data/'
 MAXINT = 10000
-SEQ_LENGTH = 8 # x: 'START' + tokens; y: tokens + 'END'
-VOCAB_SIZE = 475 # num_tokens + ['START', 'PAD', 'END']
+SEQ_LENGTH = 51 # x: 'START' + tokens; y: tokens + 'END'
 EMB_SIZE = 32
-GENERATE_NUM = 100
-FILTER_SIZE = [  1,  2,  3,  4,  5,  6,  7,  8]
-NUM_FILTER =  [100,200,200,200,160,160,160,100]
+GENERATE_NUM = 1000
+FILTER_SIZE = list(range(1,SEQ_LENGTH))
+NUM_FILTER =  ([100] + [200] * 9 + [160] * SEQ_LENGTH)[0:SEQ_LENGTH-1]
 DIS_NUM_EPOCH = 5
-DIS_NUM_EPOCH_PRETRAIN = 5
+DIS_NUM_EPOCH_PRETRAIN = 10
 GEN_NUM_EPOCH = 5
-GEN_NUM_EPOCH_PRETRAIN = 5
+GEN_NUM_EPOCH_PRETRAIN = 10
 GEN_HIDDEN_DIM = 48
 ROLLOUT_ITER = 16
-TOTAL_BATCH = 3
+TOTAL_BATCH = 5
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DTYPE = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor

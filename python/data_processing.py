@@ -14,12 +14,12 @@ import pandas as pd
 from itertools import chain
 from collections import Counter
 import torch
-from config import SEQ_LENGTH,VOCAB_SIZE,GENERATE_NUM,DEVICE,PATH
+from config import SEQ_LENGTH,GENERATE_NUM,DEVICE,PATH
 
-def gen_record(num=GENERATE_NUM):
+def gen_record(num=GENERATE_NUM, vocab_size=1):
     # batch x nChannels x Height x Width
     data = torch.rand(num, SEQ_LENGTH-1, device=DEVICE)
-    data = torch.abs(data * (VOCAB_SIZE-2)).int()+1
+    data = torch.abs(data * (vocab_size-2)).int()+1
     data = torch.cat([torch.zeros([num,1]).int(), data], dim=1)
     return data
 
@@ -32,7 +32,7 @@ def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
         assert fixed_value < target_space
         return torch.randint(low=fixed_value, high=fixed_value+1, size=(num,), device=DEVICE).long()
 
-def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
+def read_sampleFile(file='real_data_london.pkl', pad_token='PAD'):
     if file[-3:]=='pkl' or file[-3:]=='csv':
         if file[-3:] == 'pkl':
             data = pd.read_pickle(PATH+file)

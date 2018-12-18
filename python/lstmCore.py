@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-from config import (SEQ_LENGTH,EMB_SIZE,VOCAB_SIZE,DEVICE,
+from config import (SEQ_LENGTH,EMB_SIZE,DEVICE,
                     GEN_HIDDEN_DIM,GEN_NUM_EPOCH_PRETRAIN,openLog)
 from data_processing import gen_record,read_sampleFile,decode
 
@@ -25,11 +25,12 @@ def init_matrix(shape, stdDev=0.1):
     return normalSample
 
 class LSTMCore(nn.Module):
-    def __init__(self):
+    def __init__(self, vocab_size=1):
         super().__init__()
-        self.embedding = nn.Embedding(VOCAB_SIZE, EMB_SIZE)
+        self.vocab_size = vocab_size
+        self.embedding = nn.Embedding(vocab_size, EMB_SIZE)
         self.lstm = nn.LSTM(EMB_SIZE, GEN_HIDDEN_DIM, batch_first=True)
-        self.hidden2tag = nn.Linear(GEN_HIDDEN_DIM, VOCAB_SIZE)
+        self.hidden2tag = nn.Linear(GEN_HIDDEN_DIM, vocab_size)
         self.logSoftmax = nn.LogSoftmax(dim=2)
         self.hidden = self.init_hidden()
 
@@ -56,9 +57,9 @@ class LSTMCore(nn.Module):
         tag_scores = self.logSoftmax(self.tag_space)
         return tag_scores
 
-def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_token=VOCAB_SIZE-1):
+def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_token=None, vocab_size=1):
     if train_x is None:
-        x = gen_record()
+        x = gen_record(vocab_size=vocab_size)
     else:
         x = train_x
     if len(x.shape) == 1:
@@ -67,10 +68,12 @@ def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_tok
         sentence_lengths = [x.shape[1]] * len(x)
     if len(sentence_lengths) < len(x):
         sentence_lengths.extend([x.shape[1]] * (len(x)-len(sentence_lengths)))
+    if end_token is None:
+        end_token = vocab_size - 1
     
-    model = LSTMCore()
+    model = LSTMCore(vocab_size)
     model.to(DEVICE)
-    params = list(filter(lambda p: p.requires_grad, model.parameters()))    
+    params = list(filter(lambda p: p.requires_grad, model.parameters()))       
     criterion = nn.NLLLoss()
     optimizer = torch.optim.SGD(params, lr=0.01)
     y_pred_all = []
@@ -140,7 +143,7 @@ def sanityCheck_LSTMCore(batch_size=1):
     log.write('\n\nTest lstmCore.sanityCheck_LSTMCore: {}\n'.format(datetime.now())) 
     log.close()
     x, _, reverse_vocab, _ = read_sampleFile()
-    pretrain_result = pretrain_LSTMCore(x,batch_size=batch_size)
+    pretrain_result = pretrain_LSTMCore(train_x=x,batch_size=batch_size,vocab_size=len(reverse_vocab))
     model = pretrain_result[0]
     y_all_max, y_all_sample = test_genMaxSample(model,start_token=0,batch_size=batch_size)
     log = openLog('test.txt')

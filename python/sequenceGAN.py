@@ -20,21 +20,22 @@ from generator import Generator, train_generator
 from rollout import Rollout, getReward
 
 def pretrain_generator(x,start_token,end_token,ignored_tokens=None,
-                       sentence_lengths=None,batch_size=1):
+                       sentence_lengths=None,batch_size=1,vocab_size=1):
     pretrain_result = pretrain_LSTMCore(train_x=x,
                             sentence_lengths=sentence_lengths, 
-                            batch_size=batch_size, end_token=end_token)
+                            batch_size=batch_size, end_token=end_token,
+                            vocab_size=vocab_size)
     generator = Generator(pretrain_model=pretrain_result[0], 
                 start_token=start_token, ignored_tokens=ignored_tokens)    
     generator.to(DEVICE)
     return generator
 
-def train_discriminator_wrapper(x, x_gen, batch_size=1):
+def train_discriminator_wrapper(x, x_gen, batch_size=1, vocab_size=1):
     y = gen_label(len(x),fixed_value=1)
     y_gen = gen_label(len(x_gen),fixed_value=0)
     x_train = torch.cat([x.int(),x_gen.int()], dim=0)
     y_train = torch.cat([y,y_gen], dim=0)
-    discriminator = train_discriminator(x_train, y_train, batch_size)
+    discriminator = train_discriminator(x_train, y_train, batch_size, vocab_size)
     return discriminator
 
 def main(batch_size):
@@ -46,13 +47,15 @@ def main(batch_size):
     start_token = vocabulary['START']
     end_token = vocabulary['END']
     ignored_tokens = [start_token, end_token]
+    vocab_size = len(vocabulary)
     
     generator = pretrain_generator(x, start_token=start_token, 
                     end_token=end_token,ignored_tokens=ignored_tokens,
-                    sentence_lengths=sentence_lengths,batch_size=batch_size)
+                    sentence_lengths=sentence_lengths,batch_size=batch_size,
+                    vocab_size=vocab_size)
     x_gen = generator.generate(start_token=start_token, ignored_tokens=ignored_tokens, 
                                batch_size=len(x))
-    discriminator = train_discriminator_wrapper(x, x_gen, batch_size)
+    discriminator = train_discriminator_wrapper(x, x_gen, batch_size, vocab_size)
     rollout = Rollout(generator, 0.8)
     rollout.to(DEVICE)
     for total_batch in range(TOTAL_BATCH):

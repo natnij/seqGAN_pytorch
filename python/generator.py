@@ -14,7 +14,7 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import (SEQ_LENGTH,VOCAB_SIZE,DEVICE,GEN_NUM_EPOCH,MAXINT,openLog)
+from config import (SEQ_LENGTH,DEVICE,GEN_NUM_EPOCH,MAXINT,openLog)
 from data_processing import read_sampleFile
 from lstmCore import pretrain_LSTMCore
 
@@ -26,7 +26,7 @@ class Generator(nn.Module):
         self.ignored_tokens = ignored_tokens
         if pretrain_model is None:
             x, _, reverse_vocab, _ = read_sampleFile()
-            self.pretrain_model, _ = pretrain_LSTMCore(x)
+            self.pretrain_model, _ = pretrain_LSTMCore(train_x=x, vocab_size=len(reverse_vocab))
         else:
             self.pretrain_model = pretrain_model       
         self.softmax = nn.Softmax(dim=2)
@@ -112,7 +112,7 @@ class GeneratorLoss(nn.Module):
              g_loss reduces to one single value.
         '''
         x1 = x.view(-1,1).long()
-        pred1 = prediction.view(-1,VOCAB_SIZE)
+        pred1 = prediction.view(-1,prediction.shape[-1])
         x2 = self.createOneHotDummy(dim=(x1.shape[0],pred1.shape[1])).scatter_(1,x1,1)
 
         pred2 = torch.log(torch.clamp(pred1, min=1e-20, max=1.0))
@@ -172,9 +172,9 @@ def sanityCheck_GeneratorLoss(pretrain_result=None, batch_size=5):
     '''test custom loss function '''
     if pretrain_result is None:
         x, _, reverse_vocab, _ = read_sampleFile()
-        pretrain_result = pretrain_LSTMCore(x)
+        pretrain_result = pretrain_LSTMCore(x,vocab_size=len(reverse_vocab))
     model = pretrain_result[0]
-    y_pred_pretrain = pretrain_result[1].view([-1,SEQ_LENGTH,VOCAB_SIZE])
+    y_pred_pretrain = pretrain_result[1].view([-1,SEQ_LENGTH,len(reverse_vocab)])
     test_reward = y_pred_pretrain.sum(dim=2).data
     params = list(filter(lambda p: p.requires_grad, model.parameters()))
     optimizer = torch.optim.SGD(params, lr=0.01)
@@ -197,7 +197,7 @@ def sanityCheck_generator(model=None):
     log.write('\n\nTest generator.sanityCheck_generator: {}\n'.format(datetime.now()))     
     x, vocabulary, reverse_vocab, _ = read_sampleFile()
     if model is None:
-        pretrain_result = pretrain_LSTMCore(x)
+        pretrain_result = pretrain_LSTMCore(x,vocab_size=len(vocabulary))
         model = Generator(pretrain_model=pretrain_result[0])
         log.write('  generator instantiated: {}\n'.format(datetime.now()))  
     model.to(DEVICE)

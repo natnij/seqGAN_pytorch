@@ -14,9 +14,8 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import (SEQ_LENGTH,EMB_SIZE,VOCAB_SIZE,
-                    FILTER_SIZE,NUM_FILTER,DIS_NUM_EPOCH_PRETRAIN,DEVICE,
-                    openLog)
+from config import (SEQ_LENGTH,EMB_SIZE,FILTER_SIZE,NUM_FILTER,
+                    DIS_NUM_EPOCH_PRETRAIN,DEVICE,openLog)
 from data_processing import gen_record,gen_label
 
 class Highway(nn.Module):
@@ -49,7 +48,7 @@ class Highway(nn.Module):
         return x        
 
 class Discriminator(nn.Module):
-    def __init__(self, filter_size=None, num_filter=None, dropoutRate=0.0):
+    def __init__(self, filter_size=None, num_filter=None, dropoutRate=0.0, vocab_size=1):
         super().__init__()
         if filter_size is None:
             self.filter_size = [SEQ_LENGTH]
@@ -62,8 +61,9 @@ class Discriminator(nn.Module):
             assert len(filter_size)==len(num_filter)
             self.num_filter = num_filter.copy()
         self.num_filter_total = sum(self.num_filter)
+        self.vocab_size = vocab_size
         
-        self.embedding = nn.Embedding(VOCAB_SIZE, EMB_SIZE)
+        self.embedding = nn.Embedding(vocab_size, EMB_SIZE)
         self.convs = nn.ModuleList()
         for fsize, fnum in zip(self.filter_size, self.num_filter):
             # kernel_size = depth, height, width
@@ -96,17 +96,17 @@ class Discriminator(nn.Module):
         y_prob = self.softmax(fc)
         return y_prob
 
-def train_discriminator(train_x=None, train_y=None, batch_size=1):
+def train_discriminator(train_x=None, train_y=None, batch_size=1, vocab_size=1):
     if train_x is None:
-        x = gen_record()
+        x = gen_record(vocab_size=vocab_size)
     else:
         x = train_x
     if train_y is None:        
        y = gen_label()
     else:
         y = train_y
-    
-    model = Discriminator(FILTER_SIZE, NUM_FILTER)
+        
+    model = Discriminator(filter_size=FILTER_SIZE, num_filter=NUM_FILTER, vocab_size=vocab_size)
     model.to(DEVICE)
     params = list(filter(lambda p: p.requires_grad, model.parameters()))    
     criterion = nn.CrossEntropyLoss()
