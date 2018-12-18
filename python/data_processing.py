@@ -32,7 +32,7 @@ def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
         assert fixed_value < target_space
         return torch.randint(low=fixed_value, high=fixed_value+1, size=(num,), device=DEVICE).long()
 
-def read_sampleFile(file='real_data_london.pkl', pad_token='PAD'):
+def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
     if file[-3:]=='pkl' or file[-3:]=='csv':
         if file[-3:] == 'pkl':
             data = pd.read_pickle(PATH+file)

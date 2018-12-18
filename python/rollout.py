@@ -21,7 +21,7 @@ from generator import sanityCheck_generator
 import copy
 
 class Rollout(nn.Module):
-    def __init__(self, generator=None, r_update_rate=0.8):
+    def __init__(self, generator=None, r_update_rate=0.8, vocab_size=10):
         super().__init__()
         if generator is not None:
             self.ignored_tokens = generator.ignored_tokens
@@ -31,14 +31,16 @@ class Rollout(nn.Module):
             self.init_hidden = generator.pretrain_model.init_hidden
             self.logSoftmax = generator.pretrain_model.logSoftmax
             self.ignoreTokens = generator.ignoreTokens
+            self.vocab_size = generator.pretrain_model.vocab_size
         else:
-            lstm = LSTMCore()
+            lstm = LSTMCore(vocab_size=vocab_size)
             self.ignored_tokens = None
             self.embedding = lstm.embedding
             self.lstm = lstm.lstm
             self.hidden2tag = lstm.hidden2tag
             self.init_hidden = lstm.init_hidden
             self.logSoftmax = lstm.logSoftmax
+            self.vocab_size = vocab_size
             self.ignoreTokens = lambda x, y: x
             
         self.lstmCell = nn.LSTMCell(EMB_SIZE, GEN_HIDDEN_DIM)
@@ -121,7 +123,7 @@ def sanityCheck_rollout(batch_size=5):
     x, _, reverse_vocab, _ = read_sampleFile()
     x0 = x[0:batch_size]
     try:
-        model = Rollout()
+        model = Rollout(vocab_size=len(reverse_vocab))
         model.to(DEVICE)
         model.hidden = model.init_hidden(len(x0))
         model(x0,given_num=3)
@@ -142,7 +144,7 @@ def sanityCheck_rewards(batch_size=5):
         gen_output = y_output_all[-batch_size:,:]
         rollout = Rollout(generator=generator)
         rollout.to(DEVICE)
-        discriminator = train_discriminator(batch_size=batch_size,vocab_size=generator.vocab_size)    
+        discriminator = train_discriminator(batch_size=batch_size,vocab_size=generator.pretrain_model.vocab_size)
         rewards = getReward(gen_output, rollout, discriminator)
         log.write('\n  rollout.sanityCheck_rewards SUCCESSFUL. {}\n'.format(datetime.now()))
         log.close()

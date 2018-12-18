@@ -57,7 +57,7 @@ def main(batch_size):
     x_gen = generator.generate(start_token=start_token, ignored_tokens=ignored_tokens, 
                                batch_size=len(x))
     discriminator = train_discriminator_wrapper(x, x_gen, batch_size, vocab_size)
-    rollout = Rollout(generator, 0.8)
+    rollout = Rollout(generator, r_update_rate=0.8)
     rollout.to(DEVICE)
     for total_batch in range(TOTAL_BATCH):
         print('batch: {}'.format(total_batch))
@@ -77,7 +77,7 @@ def main(batch_size):
             print('iter_n_dis: {}'.format(iter_n_dis))
             x_gen = generator.generate(start_token=start_token, ignored_tokens=ignored_tokens, 
                                batch_size=len(x))
-            discriminator = train_discriminator_wrapper(x, x_gen, batch_size)
+            discriminator = train_discriminator_wrapper(x, x_gen, batch_size,vocab_size)
     
     log = openLog('genTxt.txt')
     num = generator.generate(batch_size=batch_size)
