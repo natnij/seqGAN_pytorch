@@ -25,7 +25,7 @@ def init_matrix(shape, stdDev=0.1):
     return normalSample
 
 class LSTMCore(nn.Module):
-    def __init__(self, vocab_size=1):
+    def __init__(self, vocab_size=10):
         super().__init__()
         self.vocab_size = vocab_size
         self.embedding = nn.Embedding(vocab_size, EMB_SIZE)
@@ -57,7 +57,7 @@ class LSTMCore(nn.Module):
         tag_scores = self.logSoftmax(self.tag_space)
         return tag_scores
 
-def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_token=None, vocab_size=1):
+def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_token=None, vocab_size=10):
     if train_x is None:
         x = gen_record(vocab_size=vocab_size)
     else:

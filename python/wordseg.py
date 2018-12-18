@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Dec 17 10:21:03 2018
-
-@author: t00421613
 """
 from itertools import chain
 import jieba

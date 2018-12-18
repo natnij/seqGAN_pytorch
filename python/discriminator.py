@@ -48,7 +48,7 @@ class Highway(nn.Module):
         return x        
 
 class Discriminator(nn.Module):
-    def __init__(self, filter_size=None, num_filter=None, dropoutRate=0.0, vocab_size=1):
+    def __init__(self, filter_size=None, num_filter=None, dropoutRate=0.0, vocab_size=10):
         super().__init__()
         if filter_size is None:
             self.filter_size = [SEQ_LENGTH]
@@ -96,9 +96,9 @@ class Discriminator(nn.Module):
         y_prob = self.softmax(fc)
         return y_prob
 
-def train_discriminator(train_x=None, train_y=None, batch_size=1, vocab_size=1):
+def train_discriminator(train_x=None, train_y=None, batch_size=1, vocab_size=10):
     if train_x is None:
-        x = gen_record(vocab_size=vocab_size)
+        x = gen_record(num=batch_size,vocab_size=vocab_size)
     else:
         x = train_x
     if train_y is None:        
@@ -132,13 +132,13 @@ def train_discriminator(train_x=None, train_y=None, batch_size=1, vocab_size=1):
     log.close()
     return model
 
-def sanityCheck_discriminator(batch_size=1):
+def sanityCheck_discriminator(batch_size=1,vocab_size=10):
     ''' test discriminator instantiation and pretraining'''
     log = openLog('test.txt')
     log.write('\n\nTest discriminator.sanityCheck_discriminator: {}\n'.format(datetime.now()))     
-    model = train_discriminator()
+    model = train_discriminator(vocab_size=vocab_size)
     with torch.no_grad():
-        x = gen_record(num=batch_size)
+        x = gen_record(num=batch_size,vocab_size=vocab_size)
         y_pred = model(x)
     log.write('  y_pred shape: '+str(y_pred.shape)+'\n')
     log.close()
@@ -146,4 +146,4 @@ def sanityCheck_discriminator(batch_size=1):
 
 #%%
 if __name__ == '__main__':
-    model, y_pred = sanityCheck_discriminator(4)
+    model, y_pred = sanityCheck_discriminator(batch_size=4,vocab_size=10)

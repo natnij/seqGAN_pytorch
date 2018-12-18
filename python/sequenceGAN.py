@@ -20,7 +20,7 @@ from generator import Generator, train_generator
 from rollout import Rollout, getReward
 
 def pretrain_generator(x,start_token,end_token,ignored_tokens=None,
-                       sentence_lengths=None,batch_size=1,vocab_size=1):
+                       sentence_lengths=None,batch_size=1,vocab_size=10):
     pretrain_result = pretrain_LSTMCore(train_x=x,
                             sentence_lengths=sentence_lengths, 
                             batch_size=batch_size, end_token=end_token,
@@ -30,7 +30,7 @@ def pretrain_generator(x,start_token,end_token,ignored_tokens=None,
     generator.to(DEVICE)
     return generator
 
-def train_discriminator_wrapper(x, x_gen, batch_size=1, vocab_size=1):
+def train_discriminator_wrapper(x, x_gen, batch_size=1, vocab_size=10):
     y = gen_label(len(x),fixed_value=1)
     y_gen = gen_label(len(x_gen),fixed_value=0)
     x_train = torch.cat([x.int(),x_gen.int()], dim=0)
@@ -46,7 +46,8 @@ def main(batch_size):
         batch_size = len(x)
     start_token = vocabulary['START']
     end_token = vocabulary['END']
-    ignored_tokens = [start_token, end_token]
+    pad_token = vocabulary['PAD']
+    ignored_tokens = [start_token, end_token, pad_token]
     vocab_size = len(vocabulary)
     
     generator = pretrain_generator(x, start_token=start_token, 

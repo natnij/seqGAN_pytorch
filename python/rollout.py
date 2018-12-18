@@ -142,7 +142,7 @@ def sanityCheck_rewards(batch_size=5):
         gen_output = y_output_all[-batch_size:,:]
         rollout = Rollout(generator=generator)
         rollout.to(DEVICE)
-        discriminator = train_discriminator(batch_size=batch_size)    
+        discriminator = train_discriminator(batch_size=batch_size,vocab_size=generator.vocab_size)    
         rewards = getReward(gen_output, rollout, discriminator)
         log.write('\n  rollout.sanityCheck_rewards SUCCESSFUL. {}\n'.format(datetime.now()))
         log.close()

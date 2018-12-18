@@ -16,7 +16,7 @@ from collections import Counter
 import torch
 from config import SEQ_LENGTH,GENERATE_NUM,DEVICE,PATH
 
-def gen_record(num=GENERATE_NUM, vocab_size=1):
+def gen_record(num=GENERATE_NUM, vocab_size=10):
     # batch x nChannels x Height x Width
     data = torch.rand(num, SEQ_LENGTH-1, device=DEVICE)
     data = torch.abs(data * (vocab_size-2)).int()+1
