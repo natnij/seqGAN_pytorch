@@ -96,7 +96,7 @@ def getReward(gen_output, rollout, discriminator):
     with torch.no_grad():
         gen_output = gen_output.view(-1,SEQ_LENGTH)
         batch_size = len(gen_output)
-        rewards = torch.zeros(batch_size,SEQ_LENGTH)
+        rewards = torch.zeros(batch_size,SEQ_LENGTH,device=DEVICE)
         # "ROLLOUT_ITER" determines the number of repeated runs of rollout network 
         for i in range(ROLLOUT_ITER):
             # The first given_num words are same as input_x,
@@ -108,11 +108,11 @@ def getReward(gen_output, rollout, discriminator):
                 dis_output = discriminator(rollout_output)
                 ypred = [item[1] for item in dis_output]
                 # every given_num updates one column, every i in ROLLOUT_ITER updates the entire table.
-                rewards[:,given_num-1] += torch.Tensor(ypred)
+                rewards[:,given_num-1] += torch.tensor(ypred, device=DEVICE)
             # the last-token-reward
             dis_output = discriminator(gen_output)
             ypred = [item[1] for item in dis_output]
-            rewards[:,SEQ_LENGTH-1] += torch.Tensor(ypred)
+            rewards[:,SEQ_LENGTH-1] += torch.tensor(ypred, device=DEVICE)
         rewards = rewards / (1.0 * ROLLOUT_ITER)
     return rewards
     

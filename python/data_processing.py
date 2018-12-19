@@ -20,7 +20,7 @@ def gen_record(num=GENERATE_NUM, vocab_size=10):
     # batch x nChannels x Height x Width
     data = torch.rand(num, SEQ_LENGTH-1, device=DEVICE)
     data = torch.abs(data * (vocab_size-2)).int()+1
-    data = torch.cat([torch.zeros([num,1]).int(), data], dim=1)
+    data = torch.cat([torch.zeros([num,1],device=DEVICE).int(), data], dim=1)
     return data
 
 def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
@@ -32,7 +32,7 @@ def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
         assert fixed_value < target_space
         return torch.randint(low=fixed_value, high=fixed_value+1, size=(num,), device=DEVICE).long()
 
-def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
+def read_sampleFile(file='real_data_london.pkl', pad_token='PAD'):
     if file[-3:]=='pkl' or file[-3:]=='csv':
         if file[-3:] == 'pkl':
             data = pd.read_pickle(PATH+file)
@@ -75,7 +75,7 @@ def read_sampleFile(file='real_data_chinesePoems.txt', pad_token='PAD'):
     x_lengths = [x for x,y in tmp]
     lineList_all = [y for x,y in tmp]
     generated_data = [int(vocabulary[x]) for y in lineList_all for i,x in enumerate(y) if i<SEQ_LENGTH]
-    x = torch.Tensor(generated_data).view(-1,SEQ_LENGTH)
+    x = torch.tensor(generated_data,device=DEVICE).view(-1,SEQ_LENGTH)
     return x.int(), vocabulary, reverse_vocab, x_lengths
 
 def decode(token_tbl, reverse_vocab, log=None):

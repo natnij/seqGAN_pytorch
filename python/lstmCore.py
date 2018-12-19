@@ -20,7 +20,7 @@ from config import (SEQ_LENGTH,EMB_SIZE,DEVICE,
 from data_processing import gen_record,read_sampleFile,decode
 
 def init_matrix(shape, stdDev=0.1):
-    normalDistr = Normal(torch.tensor([0.0]), torch.tensor([stdDev]))
+    normalDistr = Normal(torch.tensor([0.0],device=DEVICE), torch.tensor([stdDev],device=DEVICE))
     normalSample = normalDistr.sample(torch.Size(shape)).squeeze(dim=2)
     return normalSample
 
@@ -36,8 +36,8 @@ class LSTMCore(nn.Module):
 
     def init_hidden(self, batch_size=1):
         # dim: (num_layers, minibatch_size, hidden_dim)
-        return (torch.randn(1, batch_size, GEN_HIDDEN_DIM), 
-                torch.randn(1, batch_size, GEN_HIDDEN_DIM))
+        return (torch.randn(1, batch_size, GEN_HIDDEN_DIM, device=DEVICE), 
+                torch.randn(1, batch_size, GEN_HIDDEN_DIM, device=DEVICE))
         
     def forward(self, sentence, sentence_lengths=None):
         # sentence dim: (batch_size, maximum sentence length)
@@ -87,7 +87,7 @@ def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_tok
             x_batch = x[pointer:pointer+batch_size]
             x0_length = sentence_lengths[pointer:pointer+batch_size]
             y = torch.cat((x_batch[:,1:],
-                           torch.Tensor([end_token]*x_batch.shape[0])
+                           torch.tensor([end_token]*x_batch.shape[0],device=DEVICE)
                            .int().view(x_batch.shape[0],1)),dim=1)
             model.hidden = model.init_hidden(batch_size)
             y_pred = model(x_batch, x0_length)
@@ -109,10 +109,10 @@ def test_genMaxSample(model, start_token=0, batch_size=1):
     log.write('\n\nTest lstmCore.test_genMaxSample: {}'.format(datetime.now()))
     with torch.no_grad():
         y = [start_token] * batch_size
-        y_all_max = torch.Tensor(y).int().view(-1,1)
+        y_all_max = torch.tensor(y,device=DEVICE).int().view(-1,1)
         model.hidden = model.init_hidden(len(y))
         for i in range(SEQ_LENGTH-1):
-            x = torch.Tensor(y).view([-1,1])
+            x = torch.tensor(y,device=DEVICE).view([-1,1])
             y_pred = model(x,sentence_lengths=[1])
             y_pred = y_pred[:,:,1:-1]
             y_pred = y_pred.squeeze(dim=1)
@@ -121,10 +121,10 @@ def test_genMaxSample(model, start_token=0, batch_size=1):
             y_all_max = torch.cat([y_all_max,y.int()],dim=1)
         
         y = [start_token] * batch_size
-        y_all_sample = torch.Tensor(y).int().view(-1,1)
+        y_all_sample = torch.tensor(y,device=DEVICE).int().view(-1,1)
         model.hidden = model.init_hidden(len(y))
         for i in range(SEQ_LENGTH-1):        
-            x = torch.Tensor(y).view([-1,1])
+            x = torch.tensor(y,device=DEVICE).view([-1,1])
             y_pred = model(x,sentence_lengths=[1])
             # random choice based on probability distribution.
             y_prob = F.softmax(model.tag_space, dim=2)

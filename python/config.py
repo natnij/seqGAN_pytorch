@@ -16,7 +16,7 @@ from datetime import datetime
 
 PATH = '../data/'
 MAXINT = 10000
-SEQ_LENGTH = 8 # x: 'START' + tokens; y: tokens + 'END'
+SEQ_LENGTH = 51 # x: 'START' + tokens; y: tokens + 'END'
 EMB_SIZE = 32
 GENERATE_NUM = 100
 FILTER_SIZE = list(range(1,SEQ_LENGTH))
