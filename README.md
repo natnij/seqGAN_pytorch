@@ -36,7 +36,6 @@ To read in only limited number of samples, e.g. 8: run sequenceGAN.py 4 8.
 - `DIS_NUM_EPOCH_PRETRAIN`: number of epochs for discriminator pretraining
 - `GEN_NUM_EPOCH`: number of epochs for generator training
 - `GEN_NUM_EPOCH_PRETRAIN`: number of epochs for generator pretraining
-- `VOCAB_SIZE`: size of vocabulary. Is equal to actual number of tokens plus the 'START' and 'END' tokens.
 - `GEN_HIDDEN_DIM`: generator (LSTM) hidden dimension.
 - `ROLLOUT_ITER`: number of iterations to roll out, for calculation of rewards
 - `TOTAL_BATCH`: number of batches in adversarial training
