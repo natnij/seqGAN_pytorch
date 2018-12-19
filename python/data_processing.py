@@ -32,12 +32,16 @@ def gen_label(num=GENERATE_NUM, target_space=2, fixed_value=None):
         assert fixed_value < target_space
         return torch.randint(low=fixed_value, high=fixed_value+1, size=(num,), device=DEVICE).long()
 
-def read_sampleFile(file='real_data_london.pkl', pad_token='PAD'):
+def read_sampleFile(file='real_data_london.pkl', pad_token='PAD', num=None):
     if file[-3:]=='pkl' or file[-3:]=='csv':
         if file[-3:] == 'pkl':
             data = pd.read_pickle(PATH+file)
         else:
             data = pd.read_csv(PATH+file)
+        
+        if num is not None:
+            num = min(num,len(data))
+            data = data[0:num]
         lineList_all = data.values.tolist()
         characters = set(chain.from_iterable(lineList_all))
         lineList_all = [['START'] + w for w in lineList_all]
@@ -46,6 +50,7 @@ def read_sampleFile(file='real_data_london.pkl', pad_token='PAD'):
         lineList_all = list()
         characters = list()
         x_lengths = list()
+        count = 0
         with open(PATH+file, 'r', encoding='utf-8-sig') as f:
             for line in f:
                 line.strip()
@@ -59,6 +64,9 @@ def read_sampleFile(file='real_data_london.pkl', pad_token='PAD'):
                 if len(lineList)<SEQ_LENGTH:
                     lineList.extend([pad_token] * (SEQ_LENGTH - len(lineList)))
                 lineList_all.append(['START']+lineList)
+                count += 1
+                if num is not None and count >= num:
+                    break
 
     vocabulary = dict([(y,x+1) for x, y in enumerate(set(characters))])
     reverse_vocab = dict([(x+1,y) for x, y in enumerate(set(characters))])

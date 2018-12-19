@@ -38,10 +38,10 @@ def train_discriminator_wrapper(x, x_gen, batch_size=1, vocab_size=10):
     discriminator = train_discriminator(x_train, y_train, batch_size, vocab_size)
     return discriminator
 
-def main(batch_size):
+def main(batch_size, num=None):
     if batch_size is None:
         batch_size = 1
-    x, vocabulary, reverse_vocab, sentence_lengths = read_sampleFile()
+    x, vocabulary, reverse_vocab, sentence_lengths = read_sampleFile(num=num)
     if batch_size > len(x):
         batch_size = len(x)
     start_token = vocabulary['START']
@@ -91,6 +91,10 @@ if __name__ == '__main__':
         batch_size = int(sys.argv[1])
     except IndexError:
         batch_size = 1
-    main(batch_size)
+    try:
+        num = int(sys.argv[2])
+    except IndexError:
+        num=10
+    main(batch_size,num)
     
     

@@ -11,7 +11,7 @@ def wordseg(x, pad_token='PAD'):
     try:
         text = list(jieba.cut(x))
         text = [w for w in text if w not in ['\n',' ']]
-    except: 
+    except:
         text = []
     if len(text) <= SEQ_LENGTH-1:
         text = text + [pad_token] * (SEQ_LENGTH - 1 - len(text))
@@ -33,11 +33,11 @@ def splitSentence(x, splitBy=['。', '！','；','……']):
 
 def readRandomText(inputFilename='london.txt',outputFilename='real_data_london.pkl'):
     lineList_all = list()
-    with open(PATH+inputFilename, 'r') as f:
+    with open(PATH+inputFilename, 'r', encoding='utf-8-sig') as f:
         for line in f:
             line.strip()
             lineList_all.append(line)
-    
+
     data = [delSpace(x) for x in lineList_all if len(x) > 5]
     data = pd.DataFrame(list(chain.from_iterable([splitSentence(x) for x in data])))
     data.columns = ['data']
@@ -49,6 +49,6 @@ def readRandomText(inputFilename='london.txt',outputFilename='real_data_london.p
 
 #%%
 if __name__ == '__main__':
-    
+
     sentences = readRandomText(inputFilename='london.txt',outputFilename='real_data_london.pkl')
-    
+

@@ -43,7 +43,7 @@ class Generator(nn.Module):
         shape = (self.y_prob.shape[0], self.y_prob.shape[1])
         try:
             self.y_output = self.y_prob.view(-1,self.y_prob.shape[-1]).multinomial(num_samples=1).view(shape)
-        except:
+        except RuntimeError:
             print('error with multinomial. using argmax instead.')
             self.y_output = torch.argmax(self.y_prob.view(-1,self.y_prob.shape[-1]), dim=1).view(shape)
         
@@ -128,7 +128,7 @@ class GeneratorLoss(nn.Module):
     
     def createOneHotDummy(self, dim):
         one_hot = torch.empty(dim, device=DEVICE)
-        return one_hot
+        return one_hot.zero_()
 
 def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_lengths=None):
     if len(x.shape) == 1:
@@ -165,6 +165,7 @@ def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_le
             loss_var = model.loss_variable
             optimizer.zero_grad()
             loss_var.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
             optimizer.step()
             y_prob_all.append(y_prob)
             y_output_all.append(y_output)  
@@ -198,11 +199,11 @@ def sanityCheck_GeneratorLoss(pretrain_result=None, batch_size=5):
     log.close()
     return g_loss
 
-def sanityCheck_generator(model=None, batch_size=1):
+def sanityCheck_generator(model=None, batch_size=1, sample_size=5):
     ''' test Generator instantiation and train_generator function '''
     log = openLog('test.txt')
-    log.write('\n\nTest generator.sanityCheck_generator: {}\n'.format(datetime.now()))     
-    x, vocabulary, reverse_vocab, _ = read_sampleFile()
+    log.write('\n\nTest generator.sanityCheck_generator: {}\n'.format(datetime.now()))
+    x, vocabulary, reverse_vocab, _ = read_sampleFile(num=sample_size)
     if model is None:
         pretrain_result = pretrain_LSTMCore(x,vocab_size=len(vocabulary))
         model = Generator(pretrain_model=pretrain_result[0])
@@ -217,5 +218,5 @@ def sanityCheck_generator(model=None, batch_size=1):
 
 #%%
 if __name__ == '__main__':
-    model, y_prob_all, y_output_all = sanityCheck_generator(batch_size=5)
+    model, y_prob_all, y_output_all = sanityCheck_generator(batch_size=5, sample_size=12)
         

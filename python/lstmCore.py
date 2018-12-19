@@ -94,6 +94,7 @@ def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_tok
             loss = criterion(y_pred.view(-1,y_pred.shape[-1]), y.long().view(-1))
             optimizer.zero_grad()
             loss.backward(retain_graph=True)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
             optimizer.step()
             y_prob = F.softmax(model.tag_space, dim=2)
             y_pred_all.append(y_prob)
@@ -132,8 +133,8 @@ def test_genMaxSample(model, start_token=0, batch_size=1):
             y = y_prob.view(-1,y_prob.shape[-1]).multinomial(num_samples=1).float().view(shape)
             y_all_sample = torch.cat([y_all_sample,y.int()],dim=1)
     log.write('\n  lstmCore.test_genMaxSample SUCCESSFUL: {}\n'.format(datetime.now()))
-    log.write('    y_all_max: \n' + str(y_all_max)+'\n')
-    log.write('    y_all_sample: \n' + str(y_all_sample)+'\n')    
+#    log.write('    y_all_max: \n' + str(y_all_max)+'\n')
+#    log.write('    y_all_sample: \n' + str(y_all_sample)+'\n')    
     log.close()
     return y_all_max, y_all_sample
 

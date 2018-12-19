@@ -3,10 +3,10 @@
 Created on Wed Dec  5 08:52:48 2018
 @author: natnij
 
-Based on SeqGAN: Sequence Generative Adversarial Nets with Policy Gradient, 
+Based on SeqGAN: Sequence Generative Adversarial Nets with Policy Gradient,
     Lantao Yu, Weinan Zhang, Jun Wang, Yong Yu.
     Paper available here: https://arxiv.org/abs/1609.05473
-Translated from the original tensorflow repo: 
+Translated from the original tensorflow repo:
     https://github.com/LantaoYu/SeqGAN, and adjusted for wider usability.
 Many thanks to the original authors.
 """
@@ -16,7 +16,7 @@ from datetime import datetime
 
 PATH = '../data/'
 MAXINT = 10000
-SEQ_LENGTH = 51 # x: 'START' + tokens; y: tokens + 'END'
+SEQ_LENGTH = 8 # x: 'START' + tokens; y: tokens + 'END'
 EMB_SIZE = 32
 GENERATE_NUM = 100
 FILTER_SIZE = list(range(1,SEQ_LENGTH))
@@ -30,8 +30,8 @@ ROLLOUT_ITER = 16
 TOTAL_BATCH = 3
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#DEVICE = torch.device('cpu')
 DTYPE = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+#DEVICE = torch.device('cpu')
 #DTYPE = torch.FloatTensor
 if DEVICE.type == 'cuda':
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -46,7 +46,7 @@ def openLog(filename='record.txt'):
 
 if DEVICE.type == 'cuda':
     log = openLog('gpu.txt')
-    log.write('datetime:{}, device name:{}\n'.format(datetime.now(), 
+    log.write('datetime:{}, device name:{}\n'.format(datetime.now(),
                                           torch.cuda.get_device_name(0)))
     log.write('Memory Usage:')
     log.write('\nAllocated:'+str(round(torch.cuda.memory_allocated(0)/1024**3,1))+'GB')
