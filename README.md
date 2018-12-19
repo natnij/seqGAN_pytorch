@@ -22,6 +22,8 @@ To generate sequences: run sequenceGAN.py. The generated text will be saved in g
 
 To generate sequences in batches of e.g. 4: run sequenceGAN.py 4.
 
+To read in only limited number of samples, e.g. 8: run sequenceGAN.py 4 8.
+
 ### Params
 
 - `SEQ_LENGTH`: uniform length of sentences. Flexible input sequence length is not tested. Default to 8 because sample Chinese poem data has 7 characters per line, plus the START token. 
