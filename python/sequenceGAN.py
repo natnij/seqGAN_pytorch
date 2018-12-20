@@ -12,7 +12,7 @@ Many thanks to the original authors.
 """
 import sys
 import torch
-from config import TOTAL_BATCH, DIS_NUM_EPOCH, DEVICE, openLog
+from config import TOTAL_BATCH, DIS_NUM_EPOCH, DEVICE, PATH, openLog
 from data_processing import gen_label,decode
 from lstmCore import read_sampleFile, pretrain_LSTMCore
 from discriminator import train_discriminator
@@ -78,7 +78,14 @@ def main(batch_size, num=None):
             x_gen = generator.generate(start_token=start_token, ignored_tokens=ignored_tokens, 
                                batch_size=len(x))
             discriminator = train_discriminator_wrapper(x, x_gen, batch_size,vocab_size)
-    
+
+    torch.save(reverse_vocab, PATH+'reverse_vocab.pkl')
+    try:
+        torch.save(generator, PATH+'generator.pkl')
+        print('successfully saved generator model.')
+    except:
+        print('error: model saving failed!!!!!!')
+
     log = openLog('genTxt.txt')
     num = generator.generate(batch_size=batch_size)
     words_all = decode(num, reverse_vocab, log)
