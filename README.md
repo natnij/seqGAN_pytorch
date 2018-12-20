@@ -4,6 +4,8 @@
 ### Requirements
 pytorch 0.4
 
+jieba 0.39 (if you want to tokenize with wordseg.py)
+
 ### Background
 Written based on [SeqGAN: Sequence Generative Adversarial Nets with Policy Gradient](https://arxiv.org/abs/1609.05473), - *Lantao Yu, Weinan Zhang, Jun Wang, Yong Yu.*
 
@@ -16,11 +18,24 @@ Many thanks to the original authors.
 
 Input text as shown in sample data. Supports variable lengths input and batch processing, however for word segmentation you'd need to make some changes to the data_processing.py.
 
-For training: input sequence x is 'START' + tokens, output sequence y is tokens + 'END'.
+Train: 
 
-To generate sequences: run sequenceGAN.py. The generated text will be saved in genTxt.txt file.
+- Input sequence length is 'START' + tokens, output sequence y is tokens + 'END'. You need to specify in `config.py` the `SEQ_LENGTH`, which is the usual embedding size plus one for the 'START' token.
+- Tokenized training file can be created by running the `wordseg.py` on the original input file `london.txt`. Default training file name is `real_data_london.pkl`. 
+- Training file path can be specified in `config.py`. Training file name can be set up in `data_processing.py `(currently as a default argument). 
+- To train based on input file: run `sequenceGAN.py`. The generated text from training will be saved in `genTxt.txt` file. 
+- To train in batches of e.g. 4: run `sequenceGAN.py 4`.
+- During training, to read in only limited number of samples, e.g. 8: run `sequenceGAN.py 4 8`. If it's left out then all samples will be used for training.
+- After training, the vocabulary for decoding, as well as the generator network will be saved in PATH. Training performance will be saved in `record.txt` file.
 
-To generate sequences in batches of e.g. 4: run sequenceGAN.py 4.
+Generate new text:
+
+- After training, to generate new text: run `sequenceGAN_generate.py`. 
+- To generate more than one sample (e.g. 4 samples): run `sequenceGAN_generate.py 4`.
+
+Test:
+
+- To individually test the modules, run the files separately (the sanityCheck functions will be run). Result will be saved in `test.txt` file in PATH.
 
 ### Params
 
@@ -34,7 +49,6 @@ To generate sequences in batches of e.g. 4: run sequenceGAN.py 4.
 - `DIS_NUM_EPOCH_PRETRAIN`: number of epochs for discriminator pretraining
 - `GEN_NUM_EPOCH`: number of epochs for generator training
 - `GEN_NUM_EPOCH_PRETRAIN`: number of epochs for generator pretraining
-- `VOCAB_SIZE`: size of vocabulary. Is equal to actual number of tokens plus the 'START' and 'END' tokens.
 - `GEN_HIDDEN_DIM`: generator (LSTM) hidden dimension.
 - `ROLLOUT_ITER`: number of iterations to roll out, for calculation of rewards
 - `TOTAL_BATCH`: number of batches in adversarial training
