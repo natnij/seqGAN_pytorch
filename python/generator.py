@@ -31,28 +31,26 @@ class Generator(nn.Module):
             self.pretrain_model = pretrain_model       
         self.softmax = nn.Softmax(dim=2)
         self.loss = GeneratorLoss()
-    
-    def forward(self, x, rewards, ignored_tokens=None, sentence_lengths=None):
+
+    def forward(self, x, hidden, rewards, ignored_tokens=None, sentence_lengths=None):
         ''' forward pass. variables can be backpropagated. '''
         if ignored_tokens is None:
             ignored_tokens = self.ignored_tokens
-        y = self.pretrain_model(x, sentence_lengths=sentence_lengths).data
-        y_pred = self.pretrain_model.tag_space
-        y_pred = self.ignoreTokens(y_pred, ignored_tokens)
-        self.y_prob = self.softmax(y_pred)
-        shape = (self.y_prob.shape[0], self.y_prob.shape[1])
+        y, tag_space = self.pretrain_model(x, hidden, sentence_lengths=sentence_lengths)
+        y = y.data
+        y_pred = self.ignoreTokens(tag_space, ignored_tokens)
+        y_prob = self.softmax(y_pred)
+        shape = (y_prob.shape[0], y_prob.shape[1])
         try:
-            self.y_output = self.y_prob.view(-1,self.y_prob.shape[-1]).multinomial(num_samples=1).view(shape)
+            y_output = y_prob.view(-1,y_prob.shape[-1]).multinomial(num_samples=1).view(shape)
         except RuntimeError:
             print('error with multinomial. using argmax instead.')
-            self.y_output = torch.argmax(self.y_prob.view(-1,self.y_prob.shape[-1]), dim=1).view(shape)
-        
+            y_output = torch.argmax(y_prob.view(-1,y_prob.shape[-1]), dim=1).view(shape)
         if rewards is None:
-            rewards = self.y_prob.sum(dim=2).data
-            
-        self.loss_variable = self.loss(self.y_prob, x, rewards)
-        return self.y_output
-    
+            rewards = y_prob.sum(dim=2).data
+        loss_variable = self.loss(y_prob, x, rewards)
+        return y_output, y_prob, loss_variable
+
     def generate(self, start_token=None, ignored_tokens=None, batch_size=1):
         ''' the generate_LSTMCore only generates samples under torch.no_grad,
             therefore it will not be backpropagated.
@@ -68,13 +66,13 @@ class Generator(nn.Module):
         y = [start_token] * batch_size
         y_all_sample = torch.tensor(y,device=DEVICE).int().view(-1,1)
         with torch.no_grad():
-            self.pretrain_model.hidden = self.pretrain_model.init_hidden(len(y))
-            for i in range(SEQ_LENGTH-1):        
+            hidden = self.pretrain_model.module.init_hidden(len(y))
+            for i in range(SEQ_LENGTH-1):
                 x = torch.tensor(y,device=DEVICE).view([-1,1])
-                y_pred = self.pretrain_model(x,sentence_lengths=[1])
+                y_pred, tag_space = self.pretrain_model(x,hidden,sentence_lengths=torch.tensor([1],device=DEVICE).long())
                 # random choice based on probability distribution. another possibility would be to take the max.
-                y_prob = F.softmax(self.ignoreTokens(self.pretrain_model.tag_space, ignored_tokens), dim=2)
-                shape = (y_prob.shape[0], y_prob.shape[1]) 
+                y_prob = F.softmax(self.ignoreTokens(tag_space, ignored_tokens), dim=2)
+                shape = (y_prob.shape[0], y_prob.shape[1])
                 y = y_prob.view(-1,y_prob.shape[-1]).multinomial(num_samples=1).float().view(shape)
                 y_all_sample = torch.cat([y_all_sample,y.int()],dim=1)
         return y_all_sample
@@ -141,6 +139,7 @@ def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_le
     if len(sentence_lengths) < len(x):
         sentence_lengths.extend([x.shape[1]] 
                                 * (len(x)-len(sentence_lengths)))
+    sentence_lengths = torch.tensor(sentence_lengths,device=DEVICE).long()
     if reward is None:
         reward = torch.tensor([1.0] * x.shape[0] * x.shape[1],device=DEVICE).view(x.shape)
     if iter_n_gen is None:
@@ -149,7 +148,7 @@ def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_le
     params = list(filter(lambda p: p.requires_grad, model.parameters()))
     optimizer = torch.optim.SGD(params, lr=0.01)
     log = openLog()
-    log.write('\n\ntraining generator: {}\n'.format(datetime.now()))
+    log.write('    training generator: {}\n'.format(datetime.now()))
     for epoch in range(iter_n_gen):
         pointer = 0
         y_prob_all = []
@@ -159,10 +158,8 @@ def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_le
             x_batch = x[pointer:pointer+batch_size]
             r_batch = reward[pointer:pointer+batch_size]
             s_length = sentence_lengths[pointer:pointer+batch_size]
-            model.pretrain_model.hidden = model.pretrain_model.init_hidden(batch_size)
-            y_output = model(x=x_batch, rewards=r_batch, sentence_lengths=s_length)
-            y_prob = model.y_prob
-            loss_var = model.loss_variable
+            hidden = model.pretrain_model.module.init_hidden(batch_size)
+            y_output, y_prob, loss_var = model(x=x_batch, hidden=hidden, rewards=r_batch, sentence_lengths=s_length)
             optimizer.zero_grad()
             loss_var.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
@@ -171,7 +168,7 @@ def train_generator(model, x, reward, iter_n_gen=None, batch_size=1, sentence_le
             y_output_all.append(y_output)  
             epoch_loss.append(loss_var.item())
             pointer = pointer + batch_size
-        log.write('epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
+        log.write('      epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
     log.close()
     return ( model, torch.cat(y_prob_all), torch.cat(y_output_all).view(list(x.shape)) )
 
@@ -207,8 +204,8 @@ def sanityCheck_generator(model=None, batch_size=1, sample_size=5):
     if model is None:
         pretrain_result = pretrain_LSTMCore(x,vocab_size=len(vocabulary))
         model = Generator(pretrain_model=pretrain_result[0])
-        log.write('  generator instantiated: {}\n'.format(datetime.now()))  
-    model.to(DEVICE)
+        log.write('  generator instantiated: {}\n'.format(datetime.now()))
+        model.to(DEVICE)
     model, y_prob_all, y_output_all = train_generator(model, x, reward=None, batch_size=batch_size)
     log.write('  trained generator outputs:\n')
     log.write('    y_output_all shape: '+ str(y_output_all.shape) +'\n')

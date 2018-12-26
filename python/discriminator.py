@@ -107,13 +107,14 @@ def train_discriminator(train_x=None, train_y=None, batch_size=1, vocab_size=10)
         y = train_y
         
     model = Discriminator(filter_size=FILTER_SIZE, num_filter=NUM_FILTER, vocab_size=vocab_size)
+    model = nn.DataParallel(model)
     model.to(DEVICE)
     params = list(filter(lambda p: p.requires_grad, model.parameters()))    
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(params, lr=0.01)
     
     log = openLog()
-    log.write('\n\ntraining discriminator: {}\n'.format(datetime.now()))
+    log.write('    training discriminator: {}\n'.format(datetime.now()))
     for epoch in range(DIS_NUM_EPOCH_PRETRAIN):
         pointer = 0
         epoch_loss = []
@@ -128,7 +129,7 @@ def train_discriminator(train_x=None, train_y=None, batch_size=1, vocab_size=10)
             optimizer.step()
             pointer = pointer + batch_size
             epoch_loss.append(loss.item())
-        log.write('epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
+        log.write('      epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
     log.close()
     return model
 

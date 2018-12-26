@@ -32,30 +32,37 @@ class LSTMCore(nn.Module):
         self.lstm = nn.LSTM(EMB_SIZE, GEN_HIDDEN_DIM, batch_first=True)
         self.hidden2tag = nn.Linear(GEN_HIDDEN_DIM, vocab_size)
         self.logSoftmax = nn.LogSoftmax(dim=2)
-        self.hidden = self.init_hidden()
 
     def init_hidden(self, batch_size=1):
-        # dim: (num_layers, minibatch_size, hidden_dim)
-        return (torch.randn(1, batch_size, GEN_HIDDEN_DIM, device=DEVICE), 
-                torch.randn(1, batch_size, GEN_HIDDEN_DIM, device=DEVICE))
-        
-    def forward(self, sentence, sentence_lengths=None):
-        # sentence dim: (batch_size, maximum sentence length)
+        # batch_first for slicing between multiple GPUS;
+        # to feed into lstm, the hidden dims need to be permutated.
+        return (torch.empty(batch_size, 1, 48, device=DEVICE).normal_(),
+                torch.empty(batch_size, 1, 48, device=DEVICE).normal_())
+
+    def forward(self, sentence, hidden, sentence_lengths=None):
+        # sentence dim: (batch_size, maximum sentence length)        
         if len(sentence.shape) == 1:
             sentence = sentence.view(1,sentence.shape[0])
         if sentence_lengths is None:
-            sentence_lengths = [sentence.shape[1]] * len(sentence)
+            sentence_lengths = torch.LongTensor([sentence.shape[1]] * len(sentence))
+        # pack_padded_sequence is not compatible with DataParallel.
+        # it needs to be a cpu tensor, and in runtime the model's forward
+        # does not slice the cpu tensor as it does the layer's input tensors.
+        # work-around as of pytorch 0.4.1: transform the lengths to a cuda tensor 
+        # BEFORE entering forward pass, and revert it to a cpu tensor or a list
+        # before calling pack_padded_sequence.
+        sentence_lengths = sentence_lengths.type(torch.LongTensor)
         if len(sentence_lengths) < len(sentence):
-            sentence_lengths.extend([sentence.shape[1]] 
-                                    * (len(sentence)-len(sentence_lengths)))
-            
+            sentence_lengths = torch.cat([sentence_lengths, torch.LongTensor([sentence.shape[1]]
+                                    * (len(sentence)-len(sentence_lengths)))])     
         embeds = self.embedding(sentence.long())
-        embeds = torch.nn.utils.rnn.pack_padded_sequence(embeds, sentence_lengths, batch_first=True)
-        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        embeds = torch.nn.utils.rnn.pack_padded_sequence(embeds, sentence_lengths.to(torch.device('cpu')), batch_first=True)
+        hidden0 = [x.permute(1,0,2).contiguous() for x in hidden]
+        lstm_out, hidden0 = self.lstm(embeds, hidden0)
         lstm_out, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True, total_length=sentence.shape[1])
-        self.tag_space = self.hidden2tag(lstm_out)
-        tag_scores = self.logSoftmax(self.tag_space)
-        return tag_scores
+        tag_space = self.hidden2tag(lstm_out)        
+        tag_scores = self.logSoftmax(tag_space)
+        return tag_scores, tag_space
 
 def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_token=None, vocab_size=10):
     if train_x is None:
@@ -72,35 +79,41 @@ def pretrain_LSTMCore(train_x=None, sentence_lengths=None, batch_size=1, end_tok
         end_token = vocab_size - 1
     
     model = LSTMCore(vocab_size)
+    model = nn.DataParallel(model)#, device_ids=[0])
     model.to(DEVICE)
     params = list(filter(lambda p: p.requires_grad, model.parameters()))       
     criterion = nn.NLLLoss()
     optimizer = torch.optim.SGD(params, lr=0.01)
     y_pred_all = []
     log = openLog()
-    log.write('\n\ntraining lstmCore: {}\n'.format(datetime.now()))
+    log.write('    training lstmCore: {}\n'.format(datetime.now()))
     for epoch in range(GEN_NUM_EPOCH_PRETRAIN):
         pointer = 0
         y_pred_all = []
         epoch_loss = []
         while pointer + batch_size <= len(x):
             x_batch = x[pointer:pointer+batch_size]
-            x0_length = sentence_lengths[pointer:pointer+batch_size]
+            x0_length = torch.tensor(sentence_lengths[pointer:pointer+batch_size]).to(device=DEVICE)
             y = torch.cat((x_batch[:,1:],
                            torch.tensor([end_token]*x_batch.shape[0],device=DEVICE)
                            .int().view(x_batch.shape[0],1)),dim=1)
-            model.hidden = model.init_hidden(batch_size)
-            y_pred = model(x_batch, x0_length)
+            # hidden has to be passed to the model as a GPU tensor to be correctly sliced between multiple GPUs. 
+            # default dim for DataParallel is dim=0, so the inputs will all be sliced on dim0. 
+            # so the hidden tensors need to be permutated back to batch-size-second inside the forward pass
+            #   in order to feed into the lstm layer. 
+            # when using DataParallel the attributes can be accessed through .module
+            hidden = model.module.init_hidden(batch_size)            
+            y_pred, tag_space = model(x_batch, hidden, x0_length)
             loss = criterion(y_pred.view(-1,y_pred.shape[-1]), y.long().view(-1))
             optimizer.zero_grad()
             loss.backward(retain_graph=True)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
             optimizer.step()
-            y_prob = F.softmax(model.tag_space, dim=2)
+            y_prob = F.softmax(tag_space, dim=2)
             y_pred_all.append(y_prob)
             epoch_loss.append(loss.item())
             pointer = pointer + batch_size
-        log.write('epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
+        log.write('      epoch: '+str(epoch)+' loss: '+str(sum(epoch_loss)/len(epoch_loss))+'\n')
     log.close()
     return model, torch.cat(y_pred_all)
 
@@ -111,10 +124,10 @@ def test_genMaxSample(model, start_token=0, batch_size=1):
     with torch.no_grad():
         y = [start_token] * batch_size
         y_all_max = torch.tensor(y,device=DEVICE).int().view(-1,1)
-        model.hidden = model.init_hidden(len(y))
+        hidden = model.module.init_hidden(len(y))
         for i in range(SEQ_LENGTH-1):
             x = torch.tensor(y,device=DEVICE).view([-1,1])
-            y_pred = model(x,sentence_lengths=[1])
+            y_pred, _ = model(x, hidden, sentence_lengths=torch.tensor([1],device=DEVICE).long())
             y_pred = y_pred[:,:,1:-1]
             y_pred = y_pred.squeeze(dim=1)
             # take the max
@@ -123,18 +136,16 @@ def test_genMaxSample(model, start_token=0, batch_size=1):
         
         y = [start_token] * batch_size
         y_all_sample = torch.tensor(y,device=DEVICE).int().view(-1,1)
-        model.hidden = model.init_hidden(len(y))
-        for i in range(SEQ_LENGTH-1):        
+        hidden = model.module.init_hidden(len(y))
+        for i in range(SEQ_LENGTH-1):
             x = torch.tensor(y,device=DEVICE).view([-1,1])
-            y_pred = model(x,sentence_lengths=[1])
+            y_pred, tag_space = model(x,hidden,sentence_lengths=torch.tensor([1],device=DEVICE).long())
             # random choice based on probability distribution.
-            y_prob = F.softmax(model.tag_space, dim=2)
+            y_prob = F.softmax(tag_space, dim=2)
             shape = (y_prob.shape[0],y_prob.shape[1])
             y = y_prob.view(-1,y_prob.shape[-1]).multinomial(num_samples=1).float().view(shape)
             y_all_sample = torch.cat([y_all_sample,y.int()],dim=1)
     log.write('\n  lstmCore.test_genMaxSample SUCCESSFUL: {}\n'.format(datetime.now()))
-#    log.write('    y_all_max: \n' + str(y_all_max)+'\n')
-#    log.write('    y_all_sample: \n' + str(y_all_sample)+'\n')    
     log.close()
     return y_all_max, y_all_sample
 
